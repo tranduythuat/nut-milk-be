@@ -7,6 +7,10 @@ services:
     container_name: nut_milk_app
     restart: unless-stopped
     working_dir: /var/www
+    environment:
+      HOME: /tmp
+      XDG_CONFIG_HOME: /tmp/.config
+    user: "${UID:-1000}:${GID:-1000}"
     volumes:
       - ./:/var/www
     depends_on:
