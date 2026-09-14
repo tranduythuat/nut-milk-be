@@ -46,4 +46,16 @@ class ProductVariant extends Model
     {
         return $this->hasMany(ComboItem::class);
     }
+
+    public function orderItems(): HasMany
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+
+    public function productionPlanItems(): HasMany
+    {
+        return $this->hasMany(
+            ProductionPlanItem::class
+        );
+    }
 }

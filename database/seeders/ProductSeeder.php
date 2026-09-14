@@ -113,7 +113,7 @@ class ProductSeeder extends Seeder
                 ProductVariant::create([
                     ...$variantData,
                     'product_id' => $product->id,
-                    'stock' => 100,
+                    'stock' => 0,
                     'is_active' => true,
                     'sort_order' => $index + 1,
                 ]);

@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             CategorySeeder::class,
             ProductSeeder::class,
             ComboSeeder::class,
+            DeliverySlotSeeder::class,
         ]);
         // User::factory(10)->create();
 

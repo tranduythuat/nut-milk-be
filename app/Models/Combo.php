@@ -22,4 +22,9 @@ class Combo extends Model
     {
         return $this->hasMany(ComboItem::class);
     }
+
+    public function orderItems(): HasMany
+    {
+        return $this->hasMany(OrderItem::class);
+    }
 }
