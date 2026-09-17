@@ -8,6 +8,8 @@ use App\Http\Controllers\Api\V1\CheckoutController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\DeliveryController;
 use App\Http\Controllers\Api\V1\ProductionPlanController;
+use App\Http\Controllers\Api\V1\RawMaterialController;
+use App\Http\Controllers\Api\V1\ProductVariantIngredientController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -57,17 +59,35 @@ Route::prefix('v1')->group(function () {
         Route::patch('/{delivery}/status', [DeliveryController::class, 'updateStatus']);
     });
 
+    // công thức (BOM) theo từng variant
+    Route::prefix('product-variants/{productVariant}/ingredients')->group(function () {
+        Route::get('/', [ProductVariantIngredientController::class, 'index']);
+        Route::put('/', [ProductVariantIngredientController::class, 'sync']);
+    });
+
     // production-plans
     Route::prefix('production-plans')->group(function () {
         Route::get('/', [ProductionPlanController::class, 'index']);
         Route::post('generate', [ProductionPlanController::class, 'generate']);
         Route::post('/{productionPlan}/complete', [ProductionPlanController::class, 'complete']);
         Route::get('/{productionPlan}', [ProductionPlanController::class, 'show']);
+        Route::get('/{productionPlan}/feasibility', [ProductionPlanController::class, 'feasibility']);
 
         Route::patch('{productionPlan}/status', [ProductionPlanController::class, 'updateStatus']);
         Route::patch(
             '{productionPlan}/items/{productionPlanItem}/quantity',
             [ProductionPlanController::class, 'updateQuantity']
         );
+    });
+
+    // raw materials
+    Route::prefix('raw-materials')->group(function () {
+        Route::get('/', [RawMaterialController::class, 'index']);
+        Route::post('/', [RawMaterialController::class, 'store']);
+        Route::get('/{rawMaterial}', [RawMaterialController::class, 'show']);
+        Route::patch('/{rawMaterial}', [RawMaterialController::class, 'update']);
+        Route::delete('/{rawMaterial}', [RawMaterialController::class, 'destroy']);
+        Route::post('/{rawMaterial}/receive', [RawMaterialController::class, 'receive']);
+        Route::post('/{rawMaterial}/adjust', [RawMaterialController::class, 'adjust']);
     });
 });

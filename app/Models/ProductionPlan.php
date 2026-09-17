@@ -25,4 +25,9 @@ class ProductionPlan extends Model
             ProductionPlanItem::class
         );
     }
+
+    public function rawMaterialRequirements(): HasMany
+    {
+        return $this->hasMany(ProductionPlanRawMaterialRequirement::class);
+    }
 }

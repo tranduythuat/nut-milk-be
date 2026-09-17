@@ -12,65 +12,38 @@ use RuntimeException;
 
 class ProductionPlanningService
 {
-    public function generate(
-        string $productionDate
-    ): ProductionPlan {
-        return DB::transaction(function () use (
-            $productionDate
-        ) {
+    public function __construct(
+        protected RawMaterialRequirementService $rawMaterialRequirementService
+    ) {}
+
+    public function generate(string $productionDate): ProductionPlan
+    {
+        return DB::transaction(function () use ($productionDate) {
             $existingPlan = ProductionPlan::query()
                 ->with('items')
                 ->whereDate('production_date', $productionDate)
                 ->lockForUpdate()
                 ->first();
-            if ($existingPlan) {
-                if ($existingPlan->status !== ProductionStatus::DRAFT) {
-                    throw new RuntimeException(
-                        sprintf(
-                            'Kế hoạch sản xuất ngày %s đã ở trạng thái "%s" và không thể tạo lại.',
-                            $productionDate,
-                            $existingPlan->status->label()
-                        )
-                    );
-                }
+
+            if ($existingPlan && $existingPlan->status !== ProductionStatus::DRAFT) {
+                throw new RuntimeException(sprintf(
+                    'Kế hoạch sản xuất ngày %s đã ở trạng thái "%s" và không thể tạo lại.',
+                    $productionDate,
+                    $existingPlan->status->label()
+                ));
             }
 
-            $orders = Order::query()
-                ->with([
-                    'items.productVariant',
-                    'items.components',
-                ])
-                ->whereHas('delivery', function ($query) use (
-                    $productionDate
-                ) {
-                    $query->whereDate(
-                        'delivery_date',
-                        $productionDate
-                    );
-                })
-                ->whereIn('status', [
-                    OrderStatus::CONFIRMED->value,
-                    OrderStatus::PROCESSING->value,
-                ])
-                ->get();
+            $requirements = $this->calculateVariantDemand($productionDate);
 
-            if ($orders->isEmpty()) {
-                throw new RuntimeException(
-                    'Không có đơn hàng cho ngày giao này.'
-                );
+            if ($requirements->isEmpty()) {
+                throw new RuntimeException('Không có đơn hàng cho ngày giao này.');
             }
 
-            $requirements = $this->calculateRequirements(
-                $orders
-            );
+            $this->assertWithinCapacity($productionDate, $requirements);
 
             $plan = ProductionPlan::updateOrCreate(
-                [
-                    'production_date' => $productionDate,
-                ],
-                [
-                    'status' => ProductionStatus::DRAFT,
-                ]
+                ['production_date' => $productionDate],
+                ['status' => ProductionStatus::DRAFT]
             );
 
             $plan->items()->delete();
@@ -83,38 +56,89 @@ class ProductionPlanningService
                 ]);
             }
 
-            return $plan->load(
-                'items.productVariant.product'
-            );
+            $this->syncRawMaterialRequirements($plan, $requirements);
+
+            return $plan->load([
+                'items.productVariant.product',
+                'rawMaterialRequirements.rawMaterial',
+            ]);
         });
     }
 
-    protected function calculateRequirements(
-        Collection $orders
+    /**
+     * Tính tổng nhu cầu thành phẩm (theo variant) của một ngày giao hàng,
+     * dựa trên các đơn còn "sống" (CONFIRMED / PROCESSING).
+     *
+     * $excludeOrderId dùng khi cần tính lại nhu cầu SAU KHI loại bỏ
+     * một đơn cụ thể — ví dụ khi đơn đó vừa bị hủy.
+     *
+     * @return Collection<int, int> [product_variant_id => quantity]
+     */
+    public function calculateVariantDemand(
+        string $productionDate,
+        ?int $excludeOrderId = null
     ): Collection {
+        $orders = Order::query()
+            ->with(['items.productVariant', 'items.components'])
+            ->whereHas('delivery', fn($query) => $query->whereDate('delivery_date', $productionDate))
+            ->whereIn('status', [OrderStatus::CONFIRMED->value, OrderStatus::PROCESSING->value])
+            ->when($excludeOrderId, fn($query) => $query->where('id', '!=', $excludeOrderId))
+            ->get();
+
+        return $this->calculateRequirements($orders);
+    }
+
+    protected function assertWithinCapacity(string $productionDate, Collection $requirements): void
+    {
+        $dailyCapacity = config('production.daily_capacity');
+
+        if ($dailyCapacity === null) {
+            return;
+        }
+
+        $totalUnits = $requirements->sum();
+
+        if ($totalUnits > $dailyCapacity) {
+            throw new RuntimeException(sprintf(
+                'Nhu cầu sản xuất ngày %s (%d sản phẩm) vượt quá công suất tối đa (%d sản phẩm/ngày).',
+                $productionDate,
+                $totalUnits,
+                $dailyCapacity
+            ));
+        }
+    }
+
+    protected function syncRawMaterialRequirements(ProductionPlan $plan, Collection $variantRequirements): void
+    {
+        $requirements = $this->rawMaterialRequirementService->calculate($variantRequirements);
+
+        $plan->rawMaterialRequirements()->delete();
+
+        foreach ($requirements as $rawMaterialId => $quantity) {
+            $plan->rawMaterialRequirements()->create([
+                'raw_material_id' => $rawMaterialId,
+                'required_quantity' => $quantity,
+            ]);
+        }
+    }
+
+    protected function calculateRequirements(Collection $orders): Collection
+    {
         $requirements = collect();
 
         foreach ($orders as $order) {
             foreach ($order->items as $orderItem) {
-
                 if ($orderItem->product_variant_id) {
-                    $this->addRequirement(
-                        $requirements,
-                        $orderItem->product_variant_id,
-                        $orderItem->quantity
-                    );
-
+                    $this->addRequirement($requirements, $orderItem->product_variant_id, $orderItem->quantity);
                     continue;
                 }
 
                 foreach ($orderItem->components as $component) {
-                    $quantity = $component->quantity * $orderItem->quantity;
-
                     if ($component->product_variant_id) {
                         $this->addRequirement(
                             $requirements,
                             $component->product_variant_id,
-                            $quantity
+                            $component->quantity * $orderItem->quantity
                         );
                     }
                 }
@@ -124,14 +148,8 @@ class ProductionPlanningService
         return $requirements;
     }
 
-    protected function addRequirement(
-        Collection $requirements,
-        int $variantId,
-        int $quantity
-    ): void {
-        $requirements->put(
-            $variantId,
-            ($requirements->get($variantId) ?? 0) + $quantity
-        );
+    protected function addRequirement(Collection $requirements, int $variantId, int $quantity): void
+    {
+        $requirements->put($variantId, ($requirements->get($variantId) ?? 0) + $quantity);
     }
 }

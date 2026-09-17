@@ -11,7 +11,7 @@ use RuntimeException;
 class OrderCancellationService
 {
     public function __construct(
-        protected InventoryService $inventoryService
+        protected ProductionPlanReconciliationService $productionPlanReconciliationService
     ) {}
 
     public function cancel(
@@ -22,16 +22,17 @@ class OrderCancellationService
             $order,
             $note
         ) {
-            /*
-             * Lock Order để tránh hai request
-             * cùng cancel một Order.
-             */
             $order = Order::query()
                 ->lockForUpdate()
                 ->findOrFail($order->id);
 
             /*
              * Chỉ những trạng thái này được phép hủy.
+             *
+             * Đây đều là các trạng thái TRƯỚC "shipping" → hàng thành
+             * phẩm chưa rời kho (stock chỉ bị trừ tại
+             * OrderDeliveryWorkflowService::startShipping), nên KHÔNG
+             * cần hoàn stock thành phẩm ở đây.
              */
             if (! in_array($order->status, [
                 OrderStatus::PENDING,
@@ -46,51 +47,7 @@ class OrderCancellationService
                 );
             }
 
-            /*
-             * Load toàn bộ dữ liệu cần cho việc hoàn inventory.
-             */
-            $order->load([
-                'items.productVariant',
-                'items.components.productVariant',
-                'delivery',
-            ]);
-
-            /*
-             * Hoàn inventory.
-             */
-            foreach ($order->items as $orderItem) {
-
-                /*
-                 * Product đơn.
-                 */
-                if ($orderItem->product_variant_id) {
-                    $this->inventoryService->increase(
-                        $orderItem->productVariant,
-                        $orderItem->quantity
-                    );
-
-                    continue;
-                }
-
-                /*
-                 * Combo.
-                 *
-                 * KHÔNG lấy combo_items hiện tại.
-                 *
-                 * Sử dụng snapshot:
-                 * order_item_components
-                 */
-                foreach ($orderItem->components as $component) {
-                    if (! $component->product_variant_id) {
-                        continue;
-                    }
-
-                    $this->inventoryService->increase(
-                        $component->productVariant,
-                        $component->quantity * $orderItem->quantity
-                    );
-                }
-            }
+            $order->load(['delivery']);
 
             /*
              * Hủy Delivery nếu Delivery vẫn chưa bắt đầu giao.
@@ -115,6 +72,15 @@ class OrderCancellationService
                     );
                 }
             }
+
+            /*
+             * Thu nhỏ Production Plan tương ứng (nếu có), giải phóng
+             * đúng phần nguyên liệu CHƯA sản xuất. Gọi TRƯỚC khi đổi
+             * order->status để không ảnh hưởng logic — excludeOrderId
+             * đã tự loại trừ đơn này khỏi phép tính rồi.
+             */
+            $this->productionPlanReconciliationService
+                ->shrinkForCancelledOrder($order);
 
             /*
              * Update Order.

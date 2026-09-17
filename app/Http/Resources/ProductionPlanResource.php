@@ -24,6 +24,9 @@ class ProductionPlanResource extends JsonResource
             'items' => ProductionPlanItemResource::collection(
                 $this->whenLoaded('items')
             ),
+            'raw_material_requirements' => ProductionPlanRawMaterialRequirementResource::collection(
+                $this->whenLoaded('rawMaterialRequirements')
+            ),
 
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
