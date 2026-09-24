@@ -14,7 +14,7 @@ class RawMaterialFactory extends Factory
         return [
             'name' => ucfirst($this->faker->unique()->word()) . ' nguyên liệu',
             'code' => strtoupper($this->faker->unique()->bothify('RM-####')),
-            'unit' => 'l',
+            'unit' => 'ml',   // đổi từ 'l' -> base unit
             'stock' => 1000,
             'reserved_quantity' => 0,
             'min_stock' => 10,

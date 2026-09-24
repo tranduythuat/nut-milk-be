@@ -9,10 +9,15 @@ use RuntimeException;
 
 class RawMaterialInventoryService
 {
-    /** Nhập kho nguyên liệu (mua hàng, nhập bổ sung...). */
+    public function __construct(
+        protected UnitConversionService $units
+    ) {}
+
+    /** Nhập kho nguyên liệu. $unit = đơn vị người nhập dùng (vd 'kg'); null = mặc định base unit của material. */
     public function receive(
         RawMaterial $material,
         float $quantity,
+        ?string $unit = null,
         ?Model $reference = null,
         ?string $note = null
     ): RawMaterial {
@@ -21,46 +26,64 @@ class RawMaterialInventoryService
         }
 
         $material = RawMaterial::query()->whereKey($material->id)->lockForUpdate()->firstOrFail();
+
+        $baseQuantity = $this->normalizeToMaterialUnit($material, $quantity, $unit);
         $before = (float) $material->stock;
 
-        $material->increment('stock', $quantity);
+        $material->increment('stock', $baseQuantity);
 
         $material->stockMovements()->create([
             'type' => RawMaterialMovementType::RECEIVE,
-            'quantity' => $quantity,
+            'quantity' => $baseQuantity,
             'stock_before' => $before,
-            'stock_after' => $before + $quantity,
-            'note' => $note,
+            'stock_after' => $before + $baseQuantity,
+            'note' => $this->noteWithUnitContext($note, $quantity, $unit, $baseQuantity, $material),
             ...$this->referenceColumns($reference),
         ]);
 
         return $material->refresh();
     }
 
-    /** Điều chỉnh tồn kho về một con số cụ thể (kiểm kê thực tế). */
-    public function adjustTo(RawMaterial $material, float $newStock, ?string $note = null): RawMaterial
-    {
-        if ($newStock < 0) {
+    /** Điều chỉnh tồn kho về một con số cụ thể (kiểm kê thực tế). $newValue theo $unit đã cho. */
+    public function adjustTo(
+        RawMaterial $material,
+        float $newValue,
+        ?string $unit = null,
+        ?string $note = null
+    ): RawMaterial {
+        if ($newValue < 0) {
             throw new RuntimeException('Tồn kho sau điều chỉnh không hợp lệ.');
         }
 
         $material = RawMaterial::query()->whereKey($material->id)->lockForUpdate()->firstOrFail();
+
+        $baseNewStock = $this->normalizeToMaterialUnit($material, $newValue, $unit);
         $before = (float) $material->stock;
 
-        $material->update(['stock' => $newStock]);
+        $material->update(['stock' => $baseNewStock]);
 
         $material->stockMovements()->create([
             'type' => RawMaterialMovementType::ADJUSTMENT,
-            'quantity' => $newStock - $before,
+            'quantity' => $baseNewStock - $before,
             'stock_before' => $before,
-            'stock_after' => $newStock,
-            'note' => $note,
+            'stock_after' => $baseNewStock,
+            'note' => $this->noteWithUnitContext($note, $newValue, $unit, $baseNewStock, $material),
         ]);
 
         return $material->refresh();
     }
 
-    /** Giữ chỗ nguyên liệu cho một Production Plan (chưa trừ tồn kho thật). */
+    /*
+     |--------------------------------------------------------------------------
+     | reserve() / release() / consume() / reverseConsumption() GIỮ NGUYÊN,
+     | không cần tham số $unit — các hàm này luôn được gọi từ nội bộ hệ
+     | thống (ProductionStatusService, ProductionQuantityService) với số
+     | liệu ĐÃ ở base unit (tính từ ProductVariantIngredient.quantity, vốn
+     | đã được quy đổi về base ngay lúc khai BOM). Không có input từ người
+     | dùng chạm trực tiếp vào các hàm này.
+     |--------------------------------------------------------------------------
+     */
+
     public function reserve(
         RawMaterial $material,
         float $quantity,
@@ -98,7 +121,6 @@ class RawMaterialInventoryService
         return $material->refresh();
     }
 
-    /** Hủy giữ chỗ (khi Production Plan bị hủy trước khi sản xuất). */
     public function release(
         RawMaterial $material,
         float $quantity,
@@ -124,7 +146,6 @@ class RawMaterialInventoryService
         return $material->refresh();
     }
 
-    /** Tiêu hao nguyên liệu THẬT khi sản xuất (trừ stock, đồng thời giải phóng phần đã giữ chỗ). */
     public function consume(
         RawMaterial $material,
         float $quantity,
@@ -168,7 +189,6 @@ class RawMaterialInventoryService
         return $material->refresh();
     }
 
-    /** Hoàn nguyên liệu khi điều chỉnh GIẢM sản lượng đã sản xuất. */
     public function reverseConsumption(
         RawMaterial $material,
         float $quantity,
@@ -195,6 +215,33 @@ class RawMaterialInventoryService
         ]);
 
         return $material->refresh();
+    }
+
+    /** Quy đổi $quantity từ $unit (nếu khác base) về đúng base unit của $material. */
+    protected function normalizeToMaterialUnit(RawMaterial $material, float $quantity, ?string $unit): float
+    {
+        if ($unit === null || $unit === $material->unit) {
+            return $quantity;
+        }
+
+        return $this->units->convert($quantity, $unit, $material->unit);
+    }
+
+    /** Ghi lại trong note phần quy đổi (nếu có) để audit không bị mất ngữ cảnh đơn vị gốc. */
+    protected function noteWithUnitContext(
+        ?string $note,
+        float $inputQuantity,
+        ?string $inputUnit,
+        float $baseQuantity,
+        RawMaterial $material
+    ): ?string {
+        if ($inputUnit === null || $inputUnit === $material->unit) {
+            return $note;
+        }
+
+        $conversionNote = "(Nhập: {$inputQuantity} {$inputUnit} = {$baseQuantity} {$material->unit})";
+
+        return $note ? "{$note} {$conversionNote}" : $conversionNote;
     }
 
     protected function referenceColumns(?Model $reference): array

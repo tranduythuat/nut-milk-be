@@ -10,6 +10,7 @@ use App\Http\Requests\AdjustRawMaterialStockRequest;
 use App\Http\Resources\RawMaterialResource;
 use App\Models\RawMaterial;
 use App\Services\RawMaterialInventoryService;
+use App\Services\UnitConversionService;
 use Illuminate\Http\Request;
 use RuntimeException;
 
@@ -32,11 +33,28 @@ class RawMaterialController extends Controller
         return RawMaterialResource::collection($materials);
     }
 
-    public function store(StoreRawMaterialRequest $request)
+    public function store(StoreRawMaterialRequest $request, UnitConversionService $units)
     {
+        $data = $request->validated();
+        $baseUnit = $data['unit'];
+
+        $stockInput = (float) ($data['stock'] ?? 0);
+        $stockUnit = $data['stock_unit'] ?? $baseUnit;
+
+        try {
+            $stockInBaseUnit = $stockUnit === $baseUnit
+                ? $stockInput
+                : $units->convert($stockInput, $stockUnit, $baseUnit);
+        } catch (RuntimeException $exception) {
+            return response()->json(['success' => false, 'message' => $exception->getMessage()], 422);
+        }
+
         $material = RawMaterial::create([
-            ...$request->validated(),
-            'stock' => $request->validated('stock') ?? 0,
+            'name' => $data['name'],
+            'code' => $data['code'],
+            'unit' => $baseUnit,
+            'stock' => $stockInBaseUnit,
+            'min_stock' => $data['min_stock'] ?? null,
             'is_active' => $request->boolean('is_active', true),
         ]);
 
@@ -68,6 +86,7 @@ class RawMaterialController extends Controller
             $material = $this->inventoryService->receive(
                 $rawMaterial,
                 (float) $request->validated('quantity'),
+                $request->validated('unit'),
                 null,
                 $request->validated('note')
             );
@@ -84,6 +103,7 @@ class RawMaterialController extends Controller
             $material = $this->inventoryService->adjustTo(
                 $rawMaterial,
                 (float) $request->validated('stock'),
+                $request->validated('unit'),
                 $request->validated('note')
             );
 
