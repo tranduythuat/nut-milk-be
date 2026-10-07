@@ -61,7 +61,7 @@ class OrderWorkflowService
             }
 
             if (
-                $order->delivery->status !==
+                $order->deliveries()->first()->status !==
                 DeliveryStatus::SHIPPING
             ) {
                 throw new RuntimeException(
@@ -106,7 +106,7 @@ class OrderWorkflowService
             }
 
             if (
-                $order->delivery->status !==
+                $order->deliveries()->first()->status !==
                 DeliveryStatus::DELIVERED
             ) {
                 throw new RuntimeException(

@@ -54,6 +54,23 @@ class OrderStatusService
         });
     }
 
+    /**
+     * Bảng chuyển trạng thái HỢP LỆ CHO THAO TÁC THỦ CÔNG qua
+     * endpoint PATCH /orders/{order}/status.
+     *
+     * CỐ Ý KHÔNG liệt kê COMPLETED làm target ở bất kỳ nguồn nào:
+     * COMPLETED chỉ được set bởi OrderCompletionService::checkAndComplete(),
+     * tự động khi mọi Delivery (chưa bị hủy) của đơn đã ở trạng thái
+     * DELIVERED. Nếu endpoint này cho phép set thẳng COMPLETED, đơn có
+     * thể bị đánh dấu hoàn thành trong khi vẫn còn đợt giao chưa rời
+     * kho — sai lệch nghiêm trọng giữa trạng thái hiển thị và thực tế.
+     *
+     * Từ khi Order không còn chứa khái niệm "processing"/"shipping"
+     * (những trạng thái đó giờ sống hoàn toàn ở Delivery.status, vì
+     * 1 đơn có thể có nhiều đợt giao với trạng thái khác nhau cùng
+     * lúc), bảng transition chỉ còn 2 nguồn có thể chuyển tiếp:
+     * PENDING và CONFIRMED.
+     */
     protected function canTransition(
         OrderStatus $current,
         OrderStatus $new
@@ -65,22 +82,12 @@ class OrderStatusService
             ],
 
             OrderStatus::CONFIRMED->value => [
-                OrderStatus::PROCESSING->value,
                 OrderStatus::CANCELLED->value,
             ],
-
-            OrderStatus::PROCESSING->value => [
-                OrderStatus::SHIPPING->value,
-                OrderStatus::CANCELLED->value,
-            ],
-
-            OrderStatus::SHIPPING->value => [
-                OrderStatus::COMPLETED->value,
-            ],
-
-            OrderStatus::COMPLETED->value => [],
 
             OrderStatus::CANCELLED->value => [],
+
+            OrderStatus::COMPLETED->value => [],
         ];
 
         return in_array(

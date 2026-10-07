@@ -36,9 +36,9 @@ class OrderShippingStockTest extends TestCase
             status: OrderStatus::PROCESSING
         );
 
-        $order->delivery()->update(['status' => DeliveryStatus::PREPARING]);
+        $order->deliveries()->first()->update(['status' => DeliveryStatus::PREPARING]);
 
-        $response = $this->patchJson("/api/v1/delivery/{$order->delivery->id}/status", [
+        $response = $this->patchJson("/api/v1/delivery/{$order->deliveries()->first()->id}/status", [
             'status' => 'shipping',
         ]);
 
@@ -82,9 +82,9 @@ class OrderShippingStockTest extends TestCase
             now()->addDays(2)->toDateString(),
             status: OrderStatus::PROCESSING
         );
-        $order->delivery()->update(['status' => DeliveryStatus::PREPARING]);
+        $order->deliveries()->first()->update(['status' => DeliveryStatus::PREPARING]);
 
-        $this->patchJson("/api/v1/delivery/{$order->delivery->id}/status", ['status' => 'shipping'])
+        $this->patchJson("/api/v1/delivery/{$order->deliveries()->first()->id}/status", ['status' => 'shipping'])
             ->assertOk();
 
         $response = $this->postJson("/api/v1/orders/{$order->id}/cancel");

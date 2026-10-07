@@ -64,4 +64,9 @@ class OrderItem extends Model
     {
         return $this->hasMany(OrderItemComponent::class);
     }
+
+    public function deliveryItems(): HasMany
+    {
+        return $this->hasMany(DeliveryItem::class);
+    }
 }

@@ -35,6 +35,11 @@ class DeliveryResource extends JsonResource
                     'end_time' => $this->deliverySlot->end_time,
                 ]
             ),
+            'item_subtotal' => $this->item_subtotal,
+            'delivery_fee' => $this->delivery_fee,
+            'total' => $this->total,   // accessor item_subtotal + delivery_fee
+
+            'refunds' => RefundResource::collection($this->whenLoaded('refunds')),
 
             'status_history' => DeliveryStatusHistoryResource::collection(
                 $this->whenLoaded('statusHistories')

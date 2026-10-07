@@ -11,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\DeliveryResource;
 use App\Models\Delivery;
+use App\Services\OrderCancellationService;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 
@@ -97,5 +98,23 @@ class DeliveryController extends Controller
             'success' => true,
             'data' => new DeliveryResource($delivery),
         ]);
+    }
+
+    public function cancel(
+        Delivery $delivery,
+        Request $request,
+        OrderCancellationService $service
+    ): JsonResponse {
+        try {
+            $delivery = $service->cancelDelivery($delivery, $request->input('note'));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Đợt giao đã được hủy.',
+                'data' => new DeliveryResource($delivery),
+            ]);
+        } catch (RuntimeException $exception) {
+            return response()->json(['success' => false, 'message' => $exception->getMessage()], 422);
+        }
     }
 }

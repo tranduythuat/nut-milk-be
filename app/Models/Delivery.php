@@ -18,6 +18,8 @@ class Delivery extends Model
         'recipient_name',
         'recipient_phone',
         'note',
+        'item_subtotal',
+        'delivery_fee',
         'shipped_at',
         'delivered_at',
     ];
@@ -25,6 +27,8 @@ class Delivery extends Model
     protected $casts = [
         'delivery_date' => 'date',
         'status' => DeliveryStatus::class,
+        'item_subtotal' => 'integer',
+        'delivery_fee' => 'integer',
         'shipped_at' => 'datetime',
         'delivered_at' => 'datetime',
     ];
@@ -36,15 +40,27 @@ class Delivery extends Model
 
     public function deliverySlot(): BelongsTo
     {
-        return $this->belongsTo(
-            DeliverySlot::class
-        );
+        return $this->belongsTo(DeliverySlot::class);
+    }
+
+    public function items(): HasMany
+    {
+        return $this->hasMany(DeliveryItem::class);
     }
 
     public function statusHistories(): HasMany
     {
-        return $this->hasMany(
-            DeliveryStatusHistory::class
-        )->latest();
+        return $this->hasMany(DeliveryStatusHistory::class)->latest();
+    }
+
+    public function refunds(): HasMany
+    {
+        return $this->hasMany(Refund::class);
+    }
+
+    /** Tổng giá trị đợt giao này = tiền hàng + phí ship riêng của đợt. */
+    public function getTotalAttribute(): int
+    {
+        return $this->item_subtotal + $this->delivery_fee;
     }
 }

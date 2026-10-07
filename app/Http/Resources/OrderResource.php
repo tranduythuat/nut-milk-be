@@ -53,6 +53,9 @@ class OrderResource extends JsonResource
                 'delivered_at' => $this->delivery?->delivered_at?->toISOString(),
             ],
 
+            'deliveries' => DeliveryResource::collection($this->whenLoaded('deliveries')),
+            'refunds' => RefundResource::collection($this->whenLoaded('refunds')),
+
             'payment' => [
                 'method' => $this->payment_method,
                 'status' => $this->payment_status,
@@ -64,6 +67,11 @@ class OrderResource extends JsonResource
                 'discount_amount' => $this->discount_amount,
                 'delivery_fee' => $this->delivery_fee,
                 'total' => $this->total,
+
+                'total_cancelled_amount' => $this->total_cancelled_amount,
+                'net_payable' => $this->net_payable,
+                'pending_cash_refund_amount' => $this->pending_cash_refund_amount,
+                'total_cash_refunded' => $this->total_cash_refunded,
             ],
 
             'note' => $this->note,

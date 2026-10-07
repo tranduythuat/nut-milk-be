@@ -2,8 +2,10 @@
 
 namespace App\Services;
 
+use App\Enums\DeliveryStatus;
 use App\Enums\OrderStatus;
 use App\Enums\ProductionStatus;
+use App\Models\Delivery;
 use App\Models\Order;
 use App\Models\ProductionPlan;
 use Illuminate\Support\Collection;
@@ -76,16 +78,17 @@ class ProductionPlanningService
      */
     public function calculateVariantDemand(
         string $productionDate,
-        ?int $excludeOrderId = null
+        ?int $excludeDeliveryId = null   // đổi từ excludeOrderId -> excludeDeliveryId
     ): Collection {
-        $orders = Order::query()
-            ->with(['items.productVariant', 'items.components'])
-            ->whereHas('delivery', fn($query) => $query->whereDate('delivery_date', $productionDate))
-            ->whereIn('status', [OrderStatus::CONFIRMED->value, OrderStatus::PROCESSING->value])
-            ->when($excludeOrderId, fn($query) => $query->where('id', '!=', $excludeOrderId))
+        $deliveries = Delivery::query()
+            ->with(['items.orderItem.components', 'order'])
+            ->whereDate('delivery_date', $productionDate)
+            ->whereHas('order', fn($q) => $q->where('status', '!=', OrderStatus::CANCELLED->value))
+            ->whereNotIn('status', [DeliveryStatus::CANCELLED->value])
+            ->when($excludeDeliveryId, fn($q) => $q->where('id', '!=', $excludeDeliveryId))
             ->get();
 
-        return $this->calculateRequirements($orders);
+        return $this->calculateRequirements($deliveries);
     }
 
     protected function assertWithinCapacity(string $productionDate, Collection $requirements): void
@@ -122,23 +125,27 @@ class ProductionPlanningService
         }
     }
 
-    protected function calculateRequirements(Collection $orders): Collection
+    protected function calculateRequirements(Collection $deliveries): Collection
     {
         $requirements = collect();
 
-        foreach ($orders as $order) {
-            foreach ($order->items as $orderItem) {
+        foreach ($deliveries as $delivery) {
+            foreach ($delivery->items as $deliveryItem) {
+                $orderItem = $deliveryItem->orderItem;
+
                 if ($orderItem->product_variant_id) {
-                    $this->addRequirement($requirements, $orderItem->product_variant_id, $orderItem->quantity);
+                    $this->addRequirement($requirements, $orderItem->product_variant_id, $deliveryItem->quantity);
                     continue;
                 }
 
+                // Combo: deliveryItem->quantity = số BỘ combo trong đợt này.
+                // Nhân với định lượng component trên 1 bộ.
                 foreach ($orderItem->components as $component) {
                     if ($component->product_variant_id) {
                         $this->addRequirement(
                             $requirements,
                             $component->product_variant_id,
-                            $component->quantity * $orderItem->quantity
+                            $component->quantity * $deliveryItem->quantity
                         );
                     }
                 }

@@ -17,6 +17,7 @@ class CartItemResource extends JsonResource
         $isProduct = !is_null(@$this->product_variant_id);
 
         return [
+            'id' => $this->id,
             'type' => $isProduct ? 'product' : 'combo',
             'quantity' => $this->quantity,
             'unit_price' => $this->unit_price,

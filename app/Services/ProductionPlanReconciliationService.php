@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Enums\ProductionStatus;
-use App\Models\Order;
+use App\Models\Delivery;
 use App\Models\ProductionPlan;
 use App\Models\ProductionPlanItem;
 use App\Models\ProductionPlanRawMaterialRequirement;
@@ -18,7 +18,13 @@ class ProductionPlanReconciliationService
     ) {}
 
     /**
-     * Thu nhỏ Production Plan tương ứng khi một Order bị hủy.
+     * Thu nhỏ Production Plan tương ứng khi MỘT ĐỢT GIAO (Delivery) bị hủy.
+     *
+     * Khác với bản cũ (theo Order): đơn vị tính nhu cầu giờ là Delivery,
+     * vì 1 Order có thể có nhiều Delivery ở nhiều ngày khác nhau (khách
+     * chọn giao thành nhiều đợt để tránh sữa hỏng). Hủy 1 đợt chỉ ảnh
+     * hưởng tới Production Plan của ĐÚNG ngày của đợt đó — các đợt khác
+     * của cùng Order (nếu ở ngày khác) không bị đụng tới.
      *
      * NGUYÊN TẮC AN TOÀN (không thể vi phạm):
      * - Chỉ được giảm phần (planned_quantity - produced_quantity), tức
@@ -26,17 +32,17 @@ class ProductionPlanReconciliationService
      * - Nguyên liệu đã tiêu hao (consumed_quantity) để tạo ra thành phẩm
      *   thì KHÔNG BAO GIỜ được hoàn lại. Thành phẩm đó ở nguyên trong
      *   product_variants.stock — trở thành hàng tồn dùng chung, đơn
-     *   khác trong tương lai vẫn lấy được bình thường.
+     *   khác (hoặc đợt khác) trong tương lai vẫn lấy được bình thường.
      */
-    public function shrinkForCancelledOrder(Order $order): void
+    public function shrinkForCancelledDelivery(Delivery $delivery): void
     {
-        $deliveryDate = $order->delivery?->delivery_date?->toDateString();
+        $deliveryDate = $delivery->delivery_date?->toDateString();
 
         if (! $deliveryDate) {
             return;
         }
 
-        DB::transaction(function () use ($order, $deliveryDate) {
+        DB::transaction(function () use ($delivery, $deliveryDate) {
             $plan = ProductionPlan::query()
                 ->whereDate('production_date', $deliveryDate)
                 ->lockForUpdate()
@@ -51,10 +57,12 @@ class ProductionPlanReconciliationService
                 return;
             }
 
-            // Nhu cầu MỚI của cả ngày, sau khi loại trừ đơn vừa hủy.
+            // Nhu cầu MỚI của ngày này, sau khi loại trừ ĐÚNG đợt giao
+            // vừa hủy (không loại cả Order — các đợt khác của cùng Order,
+            // nếu trùng ngày, vẫn được tính vào nhu cầu như bình thường).
             $newDemand = $this->productionPlanningService->calculateVariantDemand(
                 $deliveryDate,
-                excludeOrderId: $order->id
+                excludeDeliveryId: $delivery->id
             );
 
             $items = ProductionPlanItem::query()
@@ -80,7 +88,7 @@ class ProductionPlanReconciliationService
                 $reducible = min($desiredReduction, max(0, $maxReducible));
 
                 if ($reducible <= 0) {
-                    // Toàn bộ phần đơn này cần đã được sản xuất rồi
+                    // Toàn bộ phần của đợt này cần đã được sản xuất rồi
                     // → không giảm được gì, thành phẩm dư ở lại làm tồn kho.
                     continue;
                 }
@@ -149,7 +157,7 @@ class ProductionPlanReconciliationService
                         $requirement->rawMaterial,
                         $releasable,
                         $plan,
-                        "Giải phóng nguyên liệu do đơn #{$order->order_number} bị hủy."
+                        "Giải phóng nguyên liệu do đợt giao #{$delivery->id} (đơn #{$delivery->order->order_number}) bị hủy."
                     );
                 }
             }
