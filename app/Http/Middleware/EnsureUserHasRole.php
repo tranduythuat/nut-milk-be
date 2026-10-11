@@ -1,4 +1,3 @@
-// app/Http/Middleware/EnsureUserHasRole.php
 <?php
 
 namespace App\Http\Middleware;

@@ -1,0 +1,60 @@
+<?php
+
+namespace App\Filament\Resources\ProductionPlans;
+
+use App\Filament\Resources\ProductionPlans\Pages\CreateProductionPlan;
+use App\Filament\Resources\ProductionPlans\Pages\EditProductionPlan;
+use App\Filament\Resources\ProductionPlans\Pages\ListProductionPlans;
+use App\Filament\Resources\ProductionPlans\Pages\ViewProductionPlan;
+use App\Filament\Resources\ProductionPlans\Schemas\ProductionPlanForm;
+use App\Filament\Resources\ProductionPlans\Schemas\ProductionPlanInfolist;
+use App\Filament\Resources\ProductionPlans\Tables\ProductionPlansTable;
+use App\Models\ProductionPlan;
+use BackedEnum;
+use Filament\Resources\Resource;
+use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Table;
+use UnitEnum;
+
+class ProductionPlanResource extends Resource
+{
+    protected static ?string $model = ProductionPlan::class;
+
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedPaperAirplane;
+
+    protected static string|UnitEnum|null $navigationGroup = 'Sản xuất';
+
+
+    public static function form(Schema $schema): Schema
+    {
+        return ProductionPlanForm::configure($schema);
+    }
+
+    public static function infolist(Schema $schema): Schema
+    {
+        return ProductionPlanInfolist::configure($schema);
+    }
+
+    public static function table(Table $table): Table
+    {
+        return ProductionPlansTable::configure($table);
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            RelationManagers\ItemsRelationManager::class,
+        ];
+    }
+
+    public static function getPages(): array
+    {
+        return [
+            'index' => ListProductionPlans::route('/'),
+            // 'create' => CreateProductionPlan::route('/create'),
+            'view' => ViewProductionPlan::route('/{record}'),
+            // 'edit' => EditProductionPlan::route('/{record}/edit'),
+        ];
+    }
+}
