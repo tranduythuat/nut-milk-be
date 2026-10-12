@@ -110,12 +110,29 @@ class CheckoutService
         $groups = [];
 
         foreach ($deliveries as $deliveryData) {
+            $this->deliveryAvailabilityService->validateDeliverySelection(
+                $deliveryData['delivery_date'],
+                (int) $deliveryData['delivery_slot_id']
+            );
+
+            $units = 0;
             $itemSubtotal = 0;
 
             foreach ($deliveryData['items'] as $itemData) {
                 $cartItem = $cartItemsById[$itemData['cart_item_id']];
+
+                $perItem = $cartItem->product_variant_id
+                    ? 1
+                    : (int) $cartItem->combo->items->sum('quantity');
+
+                $units += $perItem * $itemData['quantity'];
                 $itemSubtotal += $cartItem->unit_price * $itemData['quantity'];
             }
+
+            $this->deliveryAvailabilityService->assertCapacityAvailable(
+                Carbon::createFromFormat('Y-m-d', $deliveryData['delivery_date'])->startOfDay(),
+                $units
+            );
 
             $groups[] = [
                 'delivery_date' => $deliveryData['delivery_date'],
@@ -214,6 +231,13 @@ class CheckoutService
         }
         if ($hasCombo && ! $item->combo) {
             throw new RuntimeException('Không tìm thấy combo.');
+        }
+
+        if ($hasVariant && ! $item->productVariant->is_active) {
+            throw new RuntimeException("Sản phẩm \"{$item->productVariant->product->name} {$item->productVariant->name}\" hiện không còn bán.");
+        }
+        if ($hasCombo && ! $item->combo->is_active) {
+            throw new RuntimeException("Combo \"{$item->combo->name}\" hiện không còn bán.");
         }
     }
 

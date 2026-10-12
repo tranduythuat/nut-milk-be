@@ -109,4 +109,28 @@ class Order extends Model
             ->where('status', RefundStatus::COMPLETED->value)
             ->sum('amount');
     }
+
+    /** Chuẩn hóa SĐT VN: bỏ ký tự lạ, +84/84 -> 0. */
+    public static function normalizePhone(string $phone): string
+    {
+        $digits = preg_replace('/\D+/', '', $phone) ?? '';
+
+        if (str_starts_with($digits, '84') && strlen($digits) === 11) {
+            $digits = '0' . substr($digits, 2);
+        }
+
+        return $digits;
+    }
+
+    public function phoneMatches(?string $phone): bool
+    {
+        if (! $phone) {
+            return false;
+        }
+
+        return hash_equals(
+            self::normalizePhone($this->customer_phone),
+            self::normalizePhone($phone)
+        );
+    }
 }

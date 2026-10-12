@@ -9,21 +9,10 @@ return new class extends Migration
     /**
      * Run the migrations.
      */
-    public function up(): void
-    {
-        Schema::table('orders', function (Blueprint $table) {
-            //
-        });
-    }
+    public function up(): void {}
 
     /**
      * Reverse the migrations.
      */
-    public function down(): void
-    {
-        Schema::table('orders', function (Blueprint $table) {
-            $table->date('delivery_date')->nullable()->after('customer_address');
-            $table->string('delivery_slot')->nullable()->after('delivery_date');
-        });
-    }
+    public function down(): void {}
 };

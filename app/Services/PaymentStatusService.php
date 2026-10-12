@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\OrderStatus;
 use App\Enums\PaymentStatus;
 use App\Models\Order;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +23,16 @@ class PaymentStatusService
             $order = Order::query()
                 ->lockForUpdate()
                 ->findOrFail($order->id);
+
+            if ($newStatus === PaymentStatus::REFUNDED) {
+                throw new RuntimeException(
+                    'Trạng thái "đã hoàn tiền" được cập nhật tự động khi xác nhận khoản hoàn.'
+                );
+            }
+
+            if ($newStatus === PaymentStatus::PAID && $order->status === OrderStatus::CANCELLED) {
+                throw new RuntimeException('Không thể ghi nhận thanh toán cho đơn đã hủy.');
+            }
 
             $currentStatus = $order->payment_status;
 
@@ -62,18 +73,14 @@ class PaymentStatusService
         PaymentStatus $to
     ): bool {
         return match ($from) {
-            PaymentStatus::PENDING =>
-            in_array($to, [
-                PaymentStatus::PAID,
-                PaymentStatus::FAILED,
-            ], true),
+            PaymentStatus::PENDING => in_array($to, [PaymentStatus::PAID, PaymentStatus::FAILED], true),
 
-            PaymentStatus::PAID =>
-            $to === PaymentStatus::REFUNDED,
+            // Cho phép thử thanh toán lại sau khi thất bại.
+            PaymentStatus::FAILED => $to === PaymentStatus::PENDING,
 
-            PaymentStatus::FAILED,
-            PaymentStatus::REFUNDED =>
-            false,
+            // PAID -> REFUNDED chỉ đi qua RefundService (không set tay).
+            PaymentStatus::PAID,
+            PaymentStatus::REFUNDED => false,
         };
     }
 }

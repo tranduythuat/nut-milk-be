@@ -2,8 +2,12 @@
 
 namespace App\Services;
 
+use App\Enums\ProductionStatus;
+use App\Models\ProductionPlan;
 use App\Enums\DeliveryStatus;
+use App\Enums\OrderStatus;
 use App\Models\Delivery;
+use App\Models\DeliveryItem;
 use App\Models\DeliverySlot;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -20,7 +24,7 @@ class DeliveryAvailabilityService
         $days = config('delivery.available_days', 14);
 
         while ($dates->count() < $days) {
-            if ($this->isWorkingDay($date)) {
+            if ($this->isWorkingDay($date) && $this->isDateOpenForOrders($date)) {
                 $dates->push($date->copy());
             }
 
@@ -33,7 +37,7 @@ class DeliveryAvailabilityService
     public function getAvailableSlots(
         CarbonInterface $date
     ): Collection {
-        if (! $this->isWorkingDay($date)) {
+        if (! $this->isWorkingDay($date) || ! $this->isDateOpenForOrders($date)) {
             return collect();
         }
 
@@ -176,6 +180,8 @@ class DeliveryAvailabilityService
             );
         }
 
+        $this->assertDateOpenForOrders($deliveryDate);
+
         if (! $this->isSlotAvailable(
             $deliveryDate,
             $slotId
@@ -221,5 +227,72 @@ class DeliveryAvailabilityService
         }
 
         return $slot;
+    }
+
+    /** Tổng số chai đã nhận cho ngày này (đơn PENDING + CONFIRMED, đợt chưa hủy). */
+    public function bookedUnits(CarbonInterface $date): int
+    {
+        $items = DeliveryItem::query()
+            ->with('orderItem.components')
+            ->whereHas('delivery', function ($q) use ($date) {
+                $q->whereDate('delivery_date', $date)
+                    ->where('status', '!=', DeliveryStatus::CANCELLED->value)
+                    ->whereHas('order', fn($o) => $o->whereIn('status', [
+                        OrderStatus::PENDING->value,
+                        OrderStatus::CONFIRMED->value,
+                        OrderStatus::COMPLETED->value,
+                    ]));
+            })
+            ->get();
+
+        return $items->sum(function (DeliveryItem $item) {
+            $orderItem = $item->orderItem;
+
+            // Sản phẩm lẻ: 1 đơn vị = 1 chai. Combo: số chai trong 1 bộ.
+            $unitsPerItem = $orderItem->product_variant_id
+                ? 1
+                : (int) $orderItem->components->sum('quantity');
+
+            return $unitsPerItem * $item->quantity;
+        });
+    }
+
+    public function assertCapacityAvailable(CarbonInterface $date, int $additionalUnits): void
+    {
+        $capacity = config('production.daily_capacity');
+
+        if ($capacity === null || $capacity === '') {
+            return;
+        }
+
+        $capacity = (int) $capacity;
+        $remaining = max(0, $capacity - $this->bookedUnits($date));
+
+        if ($additionalUnits > $remaining) {
+            throw new \RuntimeException(sprintf(
+                'Ngày giao %s chỉ còn nhận được %d sản phẩm (bạn đang đặt %d). Vui lòng giảm số lượng hoặc chọn ngày khác.',
+                $date->format('d/m/Y'),
+                $remaining,
+                $additionalUnits
+            ));
+        }
+    }
+
+    public function isDateOpenForOrders(CarbonInterface $date): bool
+    {
+        return ! ProductionPlan::query()
+            ->whereDate('production_date', $date)
+            ->where('status', '!=', ProductionStatus::DRAFT->value)
+            ->exists();
+    }
+
+    public function assertDateOpenForOrders(CarbonInterface $date): void
+    {
+        if (! $this->isDateOpenForOrders($date)) {
+            throw new \RuntimeException(sprintf(
+                'Ngày giao %s đã chốt kế hoạch sản xuất, không nhận thêm đơn.',
+                $date->format('d/m/Y')
+            ));
+        }
     }
 }

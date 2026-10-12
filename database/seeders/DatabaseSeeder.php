@@ -21,6 +21,8 @@ class DatabaseSeeder extends Seeder
             ProductSeeder::class,
             ComboSeeder::class,
             DeliverySlotSeeder::class,
+            RawMaterialSeeder::class,
+            ProductVariantIngredientSeeder::class,
         ]);
         // User::factory(10)->create();
 

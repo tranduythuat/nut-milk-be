@@ -59,15 +59,19 @@ Route::prefix('v1')->group(function () {
     Route::delete('/cart', [CartController::class, 'clear']);
 
     // checkout
-    Route::post('/checkout', [CheckoutController::class, 'store']);
-
-    // orders
+    Route::post('/checkout', [CheckoutController::class, 'store'])
+        ->middleware(['throttle:checkout', 'idempotent']);
 
     // Khách hàng tra cứu đơn của chính họ bằng SĐT — vẫn công khai,
-    // vì hiện chưa gắn Order với tài khoản đăng nhập (guest checkout).
+    // Khách tra cứu / hủy đơn: phải có order_number + phone
+    Route::middleware('throttle:order-lookup')->group(function () {
+        Route::post('/orders/lookup', [OrderController::class, 'lookup']);
+        Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
+        Route::post('/delivery/{delivery}/cancel', [DeliveryController::class, 'cancel']);
+    }); // vì hiện chưa gắn Order với tài khoản đăng nhập (guest checkout).
+
     Route::get('/orders', [OrderController::class, 'index']);
     Route::get('/orders/{order}', [OrderController::class, 'show']);
-
 
     // Khách được phép tự hủy đơn CỦA HỌ khi còn ở trạng thái cho phép.
     // (Không cần role staff — đây là quyền của chủ đơn hàng, xác thực
@@ -78,17 +82,13 @@ Route::prefix('v1')->group(function () {
     Route::prefix('delivery')->group(function () {
         Route::get('available-dates', [DeliveryController::class, 'availableDates']);
         Route::get('availability', [DeliveryController::class, 'availability']);
-
-        Route::post('/{delivery}/cancel', [DeliveryController::class, 'cancel']);
     });
-
 
     /*
     |--------------------------------------------------------------------------
     | STAFF-ONLY — vận hành nội bộ, bắt buộc auth:sanctum + role staff/admin
     |--------------------------------------------------------------------------
     */
-
     Route::middleware(['auth:sanctum', 'role:staff,admin'])->group(function () {
         Route::patch('/orders/{order}/status', [OrderController::class, 'updateStatus']);
         Route::patch('/orders/{order}/payment-status', [OrderController::class, 'updatePaymentStatus']);

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\DeliveryStatus;
 use App\Enums\OrderStatus;
 use App\Models\Order;
 use RuntimeException;
@@ -9,6 +10,11 @@ use Illuminate\Support\Facades\DB;
 
 class OrderStatusService
 {
+
+    public function __construct(
+        protected DeliveryAvailabilityService $availability
+    ) {}
+
     public function update(
         Order $order,
         OrderStatus $newStatus,
@@ -19,6 +25,18 @@ class OrderStatusService
             $newStatus,
             $note
         ) {
+            if ($newStatus === OrderStatus::CONFIRMED) {
+                $order->loadMissing('deliveries');
+
+                foreach ($order->deliveries as $delivery) {
+                    if ($delivery->status === DeliveryStatus::CANCELLED) {
+                        continue;
+                    }
+
+                    $this->availability->assertDateOpenForOrders($delivery->delivery_date);
+                }
+            }
+
             $order = Order::query()
                 ->lockForUpdate()
                 ->findOrFail($order->id);

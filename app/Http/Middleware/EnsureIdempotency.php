@@ -18,8 +18,10 @@ class EnsureIdempotency
             return $next($request);
         }
 
+        // 1) Khóa theo cả path, tránh dùng nhầm key cho endpoint khác
         $existing = IdempotencyKey::query()
             ->where('key', $key)
+            ->where('path', $request->path())
             ->where('expires_at', '>', now())
             ->first();
 
@@ -33,10 +35,9 @@ class EnsureIdempotency
         /** @var Response $response */
         $response = $next($request);
 
-        // Chỉ cache các response thành công/lỗi nghiệp vụ có cấu trúc
-        // JSON dự đoán được — không cache lỗi 500/validation ngẫu nhiên
-        // để tránh khóa cứng một lỗi tạm thời vào key vĩnh viễn.
-        if (in_array($response->getStatusCode(), [200, 201, 422], true)) {
+        // 2) Chỉ cache 200/201. Nếu cache cả 422, khách sửa form rồi gửi lại
+        //    cùng key sẽ nhận lại lỗi cũ trong 24h.
+        if (in_array($response->getStatusCode(), [200, 201], true)) {
             DB::transaction(function () use ($key, $request, $response) {
                 IdempotencyKey::updateOrCreate(
                     ['key' => $key],

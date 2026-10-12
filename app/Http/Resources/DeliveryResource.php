@@ -45,6 +45,14 @@ class DeliveryResource extends JsonResource
                 $this->whenLoaded('statusHistories')
             ),
 
+            'items' => $this->whenLoaded('items', fn() => $this->items->map(fn($i) => [
+                'id' => $i->id,
+                'order_item_id' => $i->order_item_id,
+                'item_name' => $i->orderItem?->item_name,
+                'variant_name' => $i->orderItem?->variant_name,
+                'quantity' => $i->quantity,
+            ])),
+
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
         ];

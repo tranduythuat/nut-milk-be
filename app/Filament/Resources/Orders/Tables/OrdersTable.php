@@ -45,7 +45,7 @@ class OrdersTable
                     ->options(collect(OrderStatus::cases())->mapWithKeys(fn($s) => [$s->value => $s->label()])),
 
             ])
-            ->recordActions([
+            ->actions([
                 ViewAction::make(),
                 Action::make('confirm')
                     ->label('Xác nhận đơn')

@@ -16,5 +16,6 @@ return [
     |
     */
     'max_deliveries_per_order' => (int) env('CHECKOUT_MAX_DELIVERIES_PER_ORDER', 3),
+    'max_quantity_per_item' => (int) env('CHECKOUT_MAX_QUANTITY_PER_ITEM', 50),
 
 ];

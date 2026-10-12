@@ -16,4 +16,21 @@ class ViewProductionPlan extends ViewRecord
     //         EditAction::make(),
     //     ];
     // }
+
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        return $data;
+    }
+
+    public function mount(int|string $record): void
+    {
+        parent::mount($record);
+
+        $this->record->load([
+            'rawMaterialRequirements.rawMaterial',
+            'rawMaterialRequirements.productionPlan',
+            'items.productVariant.product',
+            'items.productVariant.ingredients',
+        ]);
+    }
 }

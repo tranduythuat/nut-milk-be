@@ -14,9 +14,14 @@ use App\Models\Delivery;
 use App\Services\OrderCancellationService;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
+use App\Http\Controllers\Concerns\AuthorizesOrderOwner;
+use App\Http\Requests\CancelOrderRequest;
+use RuntimeException;
 
 class DeliveryController extends Controller
 {
+    use AuthorizesOrderOwner;
+
     public function __construct(
         protected DeliveryAvailabilityService $availabilityService
     ) {}
@@ -68,45 +73,39 @@ class DeliveryController extends Controller
         Delivery $delivery,
         DeliveryStatusService $deliveryStatusService,
         OrderDeliveryWorkflowService $workflowService
-    ) {
-        $newStatus = DeliveryStatus::from(
-            $request->validated('status')
-        );
-
+    ): JsonResponse {
+        $newStatus = DeliveryStatus::from($request->validated('status'));
         $note = $request->validated('note');
 
+        try {
+            $delivery = match ($newStatus) {
+                DeliveryStatus::SHIPPING => $workflowService->startShipping($delivery, $note),
+                DeliveryStatus::DELIVERED => $workflowService->completeDelivery($delivery, $note),
+                default => $deliveryStatusService->updateStatus($delivery, $newStatus, $note),
+            };
 
-        if ($newStatus === DeliveryStatus::SHIPPING) {
-            $delivery = $workflowService->startShipping(
-                $delivery,
-                $note
-            );
-        } elseif ($newStatus === DeliveryStatus::DELIVERED) {
-            $delivery = $workflowService->completeDelivery(
-                $delivery,
-                $note
-            );
-        } else {
-            $delivery = $deliveryStatusService->updateStatus(
-                $delivery,
-                $newStatus,
-                $note
-            );
+            return response()->json([
+                'success' => true,
+                'data' => new DeliveryResource($delivery),
+            ]);
+        } catch (RuntimeException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ], 422);
         }
-
-        return response()->json([
-            'success' => true,
-            'data' => new DeliveryResource($delivery),
-        ]);
     }
 
     public function cancel(
+        CancelOrderRequest $request,
         Delivery $delivery,
-        Request $request,
         OrderCancellationService $service
     ): JsonResponse {
+        $delivery->load('order');
+        $this->authorizeOrderOwnerOrStaff($request, $delivery->order);
+
         try {
-            $delivery = $service->cancelDelivery($delivery, $request->input('note'));
+            $delivery = $service->cancelDelivery($delivery, $request->validated('note'));
 
             return response()->json([
                 'success' => true,
@@ -114,7 +113,10 @@ class DeliveryController extends Controller
                 'data' => new DeliveryResource($delivery),
             ]);
         } catch (RuntimeException $exception) {
-            return response()->json(['success' => false, 'message' => $exception->getMessage()], 422);
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+            ], 422);
         }
     }
 }

@@ -37,14 +37,6 @@ class ProductVariant extends Model
         return $this->belongsTo(Product::class);
     }
 
-    public function optionValues(): BelongsToMany
-    {
-        return $this->belongsToMany(
-            ProductOptionValue::class,
-            'product_variant_option_values'
-        );
-    }
-
     public function comboItems(): HasMany
     {
         return $this->hasMany(ComboItem::class);

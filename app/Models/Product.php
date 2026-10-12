@@ -38,10 +38,4 @@ class Product extends Model
     {
         return $this->hasMany(ProductVariant::class)->orderBy('sort_order');
     }
-
-    public function options()
-    {
-        return $this->hasMany(ProductOption::class)
-            ->orderBy('sort_order');
-    }
 }

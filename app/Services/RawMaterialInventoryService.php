@@ -58,6 +58,17 @@ class RawMaterialInventoryService
         $material = RawMaterial::query()->whereKey($material->id)->lockForUpdate()->firstOrFail();
 
         $baseNewStock = $this->normalizeToMaterialUnit($material, $newValue, $unit);
+
+        if ($baseNewStock < (float) $material->reserved_quantity) {
+            throw new RuntimeException(sprintf(
+                'Tồn kho sau kiểm kê (%s %s) thấp hơn lượng đang giữ chỗ cho kế hoạch sản xuất (%s %s). Hãy hủy hoặc điều chỉnh kế hoạch liên quan trước.',
+                $baseNewStock,
+                $material->unit,
+                (float) $material->reserved_quantity,
+                $material->unit
+            ));
+        }
+
         $before = (float) $material->stock;
 
         $material->update(['stock' => $baseNewStock]);

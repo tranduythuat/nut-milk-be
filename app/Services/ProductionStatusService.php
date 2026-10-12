@@ -13,6 +13,7 @@ class ProductionStatusService
         protected ProductionQuantityService $productionQuantityService,
         protected DeliveryStatusService $deliveryStatusService,
         protected RawMaterialInventoryService $rawMaterialInventoryService,
+        protected RawMaterialRequirementService $rawMaterialRequirementService,
     ) {}
 
     public function updateStatus(
@@ -62,6 +63,8 @@ class ProductionStatusService
     {
         $plan->load('rawMaterialRequirements.rawMaterial');
 
+        $this->assertRawMaterialsAvailable($plan);
+
         foreach ($plan->rawMaterialRequirements as $requirement) {
             $this->rawMaterialInventoryService->reserve(
                 $requirement->rawMaterial,
@@ -72,6 +75,32 @@ class ProductionStatusService
 
             $requirement->update(['reserved_quantity' => $requirement->required_quantity]);
         }
+    }
+
+    protected function assertRawMaterialsAvailable(ProductionPlan $plan): void
+    {
+        $required = $plan->rawMaterialRequirements
+            ->pluck('required_quantity', 'raw_material_id')
+            ->map(fn($q) => (float) $q);
+
+        $result = $this->rawMaterialRequirementService->checkFeasibility($required);
+
+        if ($result['feasible']) {
+            return;
+        }
+
+        $lines = collect($result['shortages'])->map(fn($s) => sprintf(
+            '%s: cần %s %s, khả dụng %s, thiếu %s',
+            $s['raw_material_name'],
+            round($s['required_quantity'], 2),
+            $s['unit'],
+            round($s['available_quantity'], 2),
+            round($s['shortage_quantity'], 2),
+        ));
+
+        throw new RuntimeException(
+            'Không đủ nguyên liệu để xác nhận kế hoạch. ' . $lines->implode(' | ')
+        );
     }
 
     protected function releaseRawMaterials(ProductionPlan $plan): void

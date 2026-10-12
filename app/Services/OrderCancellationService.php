@@ -14,6 +14,7 @@ class OrderCancellationService
     public function __construct(
         protected ProductionPlanReconciliationService $reconciliationService,
         protected RefundService $refundService,
+        protected OrderCompletionService $orderCompletionService,
     ) {}
 
     /**
@@ -66,15 +67,18 @@ class OrderCancellationService
         });
     }
 
-    /**
-     * Hủy MỘT ĐỢT GIAO cụ thể, giữ nguyên các đợt còn lại — đây là
-     * tính năng MỚI, phục vụ đúng kịch bản "khách không dùng hết, hủy
-     * đợt 2, giữ đợt 1".
-     */
     public function cancelDelivery(Delivery $delivery, ?string $note = null): Delivery
     {
         return DB::transaction(function () use ($delivery, $note) {
             $delivery = Delivery::query()->lockForUpdate()->findOrFail($delivery->id);
+            $order = Order::query()->lockForUpdate()->findOrFail($delivery->order_id);
+
+            if (! in_array($order->status, [OrderStatus::PENDING, OrderStatus::CONFIRMED], true)) {
+                throw new RuntimeException(sprintf(
+                    'Không thể hủy đợt giao của đơn đang ở trạng thái "%s".',
+                    $order->status->label()
+                ));
+            }
 
             if (! in_array($delivery->status, [DeliveryStatus::PENDING, DeliveryStatus::PREPARING], true)) {
                 throw new RuntimeException(sprintf(
@@ -84,14 +88,32 @@ class OrderCancellationService
             }
 
             $this->cancelSingleDelivery($delivery, $note ?? 'Khách yêu cầu hủy đợt giao này.');
-
-            // Nếu đây là đợt cuối cùng còn active và đơn chỉ có đợt này
-            // -> không tự hủy cả Order (khách có thể vẫn muốn giữ đơn
-            // hoặc đã có đợt khác đã giao). Việc hủy Order là quyết định
-            // tách biệt, qua endpoint cancel() riêng.
+            $this->syncOrderAfterDeliveryCancelled($order);
 
             return $delivery->fresh(['order', 'deliverySlot', 'statusHistories']);
         });
+    }
+
+    protected function syncOrderAfterDeliveryCancelled(Order $order): void
+    {
+        $order->load('deliveries');
+
+        $allCancelled = $order->deliveries->every(
+            fn(Delivery $d) => $d->status === DeliveryStatus::CANCELLED
+        );
+
+        if ($allCancelled) {
+            $order->update(['status' => OrderStatus::CANCELLED]);
+            $order->statusHistories()->create([
+                'status' => OrderStatus::CANCELLED,
+                'note' => 'Tất cả đợt giao đã bị hủy.',
+            ]);
+
+            return;
+        }
+
+        // Các đợt còn lại đều đã DELIVERED -> đơn hoàn tất.
+        $this->orderCompletionService->checkAndComplete($order->id);
     }
 
     protected function cancelSingleDelivery(Delivery $delivery, string $note): void

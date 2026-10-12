@@ -23,6 +23,11 @@ class CancelOrderRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'phone' => [
+                $this->user('sanctum') ? 'nullable' : 'required',
+                'string',
+                'max:20',
+            ],
             'note' => [
                 'nullable',
                 'string',

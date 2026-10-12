@@ -15,6 +15,7 @@ use Filament\Actions\EditAction;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\KeyValue;
+use Filament\Forms\Components\Select;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
@@ -36,10 +37,16 @@ class VariantsRelationManager extends RelationManager
 
                 TextInput::make('price')->numeric()->required()->minValue(0)->suffix('đ'),
 
-                KeyValue::make('attributes')
-                    ->keyLabel('Thuộc tính')
-                    ->valueLabel('Giá trị')
-                    ->helperText('Ví dụ: volume = 250, unit = ml'),
+                TextInput::make('attributes.volume')
+                    ->label('Dung tích')
+                    ->numeric()
+                    ->required(),
+
+                Select::make('attributes.unit')
+                    ->label('Đơn vị')
+                    ->options(['ml' => 'ml', 'L' => 'L'])
+                    ->default('ml')
+                    ->required(),
 
                 // KHÔNG có field 'stock': tồn kho thành phẩm chỉ đổi qua
                 // ProductionQuantityService (sản xuất) và

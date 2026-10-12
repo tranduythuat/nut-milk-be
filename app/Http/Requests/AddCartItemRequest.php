@@ -37,6 +37,7 @@ class AddCartItemRequest extends FormRequest
                 'required',
                 'integer',
                 'min:1',
+                'max:' . (int) config('checkout.max_quantity_per_item', 50),
             ],
         ];
     }
@@ -53,5 +54,14 @@ class AddCartItemRequest extends FormRequest
                 $validator->errors()->add('item', 'Chỉ được chọn sản phẩm hoặc combo, không được chọn cả hai.');
             }
         },];
+    }
+
+    public function messages(): array
+    {
+        $max = (int) config('checkout.max_quantity_per_item', 50);
+
+        return [
+            'quantity.max' => "Mỗi sản phẩm chỉ được đặt tối đa {$max} cho một lần. Liên hệ cửa hàng nếu bạn cần số lượng lớn hơn.",
+        ];
     }
 }

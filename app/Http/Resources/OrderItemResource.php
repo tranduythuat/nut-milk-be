@@ -18,6 +18,7 @@ class OrderItemResource extends JsonResource
             'quantity' => $this->quantity,
             'unit_price' => $this->unit_price,
             'total_price' => $this->total_price,
+            'components' => OrderItemComponentResource::collection($this->whenLoaded('components')),
         ];
     }
 }

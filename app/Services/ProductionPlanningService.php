@@ -83,7 +83,7 @@ class ProductionPlanningService
         $deliveries = Delivery::query()
             ->with(['items.orderItem.components', 'order'])
             ->whereDate('delivery_date', $productionDate)
-            ->whereHas('order', fn($q) => $q->where('status', '!=', OrderStatus::CANCELLED->value))
+            ->whereHas('order', fn($q) => $q->whereIn('status', [OrderStatus::CONFIRMED->value, OrderStatus::COMPLETED->value]))
             ->whereNotIn('status', [DeliveryStatus::CANCELLED->value])
             ->when($excludeDeliveryId, fn($q) => $q->where('id', '!=', $excludeDeliveryId))
             ->get();

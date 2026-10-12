@@ -33,20 +33,11 @@ class CartService
         ]);
     }
 
-    public function addProduct(
-        Cart $cart,
-        ProductVariant $variant,
-        int $quantity
-    ): void {
-        if (!$variant->is_active) {
+    public function addProduct(Cart $cart, ProductVariant $variant, int $quantity): void
+    {
+        if (! $variant->is_active) {
             throw ValidationException::withMessages([
                 'product_variant_id' => 'Sản phẩm này hiện không khả dụng.',
-            ]);
-        }
-
-        if ($variant->stock < $quantity) {
-            throw ValidationException::withMessages([
-                'quantity' => 'Số lượng sản phẩm không đủ.',
             ]);
         }
 
@@ -58,15 +49,10 @@ class CartService
 
             if ($item) {
                 $newQuantity = $item->quantity + $quantity;
-
-                if ($variant->stock < $newQuantity) {
-                    throw ValidationException::withMessages([
-                        'quantity' => 'Số lượng sản phẩm không đủ.',
-                    ]);
-                }
+                $this->assertQuantityWithinLimit($newQuantity);
 
                 $item->update([
-                    'quantity' => $newQuantity,
+                    'quantity' => $item->quantity + $quantity,
                     'unit_price' => $variant->price,
                 ]);
 
@@ -81,6 +67,7 @@ class CartService
             ]);
         });
     }
+
 
     public function addCombo(
         Cart $cart,
@@ -100,6 +87,9 @@ class CartService
                 ->first();
 
             if ($item) {
+                $newQuantity = $item->quantity + $quantity;
+                $this->assertQuantityWithinLimit($newQuantity);
+
                 $item->update([
                     'quantity' => $item->quantity + $quantity,
                     'unit_price' => $combo->price,
@@ -117,47 +107,23 @@ class CartService
         });
     }
 
-    public function updateItem(
-        Cart $cart,
-        int $itemId,
-        int $quantity
-    ): void {
-        $item = $cart->items()
-            ->with([
-                'productVariant',
-                'combo',
-            ])
-            ->findOrFail($itemId);
+    public function updateItem(Cart $cart, int $itemId, int $quantity): void
+    {
+        $item = $cart->items()->with(['productVariant', 'combo'])->findOrFail($itemId);
 
-        if ($item->productVariant) {
-            if (!$item->productVariant->is_active) {
-                throw ValidationException::withMessages([
-                    'quantity' => 'Sản phẩm này hiện không khả dụng.',
-                ]);
-            }
+        $source = $item->productVariant ?? $item->combo;
 
-            if ($item->productVariant->stock < $quantity) {
-                throw ValidationException::withMessages([
-                    'quantity' => 'Số lượng sản phẩm không đủ.',
-                ]);
-            }
-
-            $item->update([
-                'quantity' => $quantity,
-                'unit_price' => $item->productVariant->price,
-            ]);
-
-            return;
-        }
-
-        if ($item->combo) {
-            $item->update([
-                'quantity' => $quantity,
-                'unit_price' => $item->combo->price,
+        if (! $source || ! $source->is_active) {
+            throw ValidationException::withMessages([
+                'quantity' => 'Sản phẩm này hiện không khả dụng.',
             ]);
         }
+
+        $item->update([
+            'quantity' => $quantity,
+            'unit_price' => $source->price,
+        ]);
     }
-
     public function removeItem(Cart $cart, int $itemId): void
     {
         $cart->items()
@@ -168,5 +134,16 @@ class CartService
     public function clear(Cart $cart): void
     {
         $cart->items()->delete();
+    }
+
+    protected function assertQuantityWithinLimit(int $quantity): void
+    {
+        $max = (int) config('checkout.max_quantity_per_item', 50);
+
+        if ($quantity > $max) {
+            throw ValidationException::withMessages([
+                'quantity' => "Mỗi sản phẩm chỉ được đặt tối đa {$max}. Trong giỏ đã có sẵn một phần.",
+            ]);
+        }
     }
 }

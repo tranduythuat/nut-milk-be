@@ -14,6 +14,7 @@ use Filament\Actions\ViewAction;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
+use Illuminate\Database\Eloquent\Builder;
 use Filament\Tables\Table;
 use RuntimeException;
 
@@ -35,7 +36,17 @@ class ProductionPlansTable
                         ProductionStatus::CANCELLED => 'danger',
                     }),
                 TextColumn::make('items_count')->counts('items')->label('Số loại SP'),
+                TextColumn::make('material_status')
+                    ->label('Nguyên liệu')
+                    ->badge()
+                    ->state(fn(ProductionPlan $record) => $record->materialStatus()['label'])
+                    ->color(fn(ProductionPlan $record) => $record->materialStatus()['color']),
             ])
+            ->modifyQueryUsing(fn(Builder $query) => $query->with([
+                'rawMaterialRequirements.rawMaterial',
+                'items.productVariant.ingredients',
+            ]))
+            ->defaultSort('production_date', 'desc')
             ->filters([
                 SelectFilter::make('status')
                     ->options(collect(ProductionStatus::cases())->mapWithKeys(fn($s) => [$s->value => $s->label()])),

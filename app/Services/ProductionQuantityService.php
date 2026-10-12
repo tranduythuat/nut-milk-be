@@ -48,8 +48,8 @@ class ProductionQuantityService
             $delta = $producedQuantity - $item->produced_quantity;
 
             if ($delta !== 0) {
-                $this->applyRawMaterialDelta($plan, $item, $delta);
                 $this->applyFinishedGoodsDelta($item, $delta);
+                $this->applyRawMaterialDelta($plan, $item, $delta);
             }
 
             $item->update(['produced_quantity' => $producedQuantity]);
@@ -123,14 +123,29 @@ class ProductionQuantityService
             ->first();
 
         if (! $variant) {
-            return;
+            throw new RuntimeException('Không tìm thấy phân loại sản phẩm của dòng kế hoạch này.');
         }
 
         if ($delta > 0) {
             $variant->increment('stock', $delta);
-        } else {
-            $variant->decrement('stock', min(abs($delta), $variant->stock));
+
+            return;
         }
+
+        $reduction = abs($delta);
+
+        // Thành phẩm đã xuất kho đi giao thì không thể "rút lại" khỏi sản lượng.
+        if ($variant->stock < $reduction) {
+            throw new RuntimeException(sprintf(
+                'Không thể giảm sản lượng %d: kho thành phẩm "%s %s" chỉ còn %d (phần còn lại đã xuất đi giao hoặc dùng cho đơn khác).',
+                $reduction,
+                $variant->product->name ?? '',
+                $variant->name,
+                $variant->stock
+            ));
+        }
+
+        $variant->decrement('stock', $reduction);
     }
 
     public function isCompleted(ProductionPlan $plan): bool
